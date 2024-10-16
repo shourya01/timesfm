@@ -89,7 +89,7 @@ class NRELComstock(Dataset):
         return x,y
     
 
-def get_data_and_generate_train_test_sets(
+def get_data_and_generate_train_val_test_sets(
     data_array: np.ndarray, # data matrix of shape (num_bldg,num_time_points,num_features). NOTE that features 2 and 3 are categorical features to embed time indices
     split_ratios: Union[List,Tuple], # 3-element list containing the ratios of train-val-test
     dataset_kwargs: Tuple # ONLY include num_bldg, lookback, lookahead, normalize, dtype, and context_len keys. See NRELComstock definition above for details.

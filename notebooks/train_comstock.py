@@ -7,14 +7,15 @@ import matplotlib.pyplot as plt
 import time
 from tqdm import tqdm
 
-import timesfm.pytorch_patched_decoder_appfl as TFMappfl
-import timesfm.custom_data_set_appfl as TFMdset
+# load timesfm stuff
+import timesfm.pytorch_patched_decoder_wrapper as TFMmodel
+import timesfm.custom_data_set as TFMdset
 
 plt.rcParams['text.usetex'] = True
 plt.rcParams.update({'font.size': 14})
 plt.rcParams['text.latex.preamble'] = r'\usepackage{times}'
 
-device, device_2 = torch.device('cuda:0'), torch.device('cuda:1')
+device, device_2 = torch.device('cuda:0'), torch.device('cuda:1') if torch.cuda.device_count() > 1 else  torch.device('cuda:0')
 
 # batch size
 batch_size = 512
@@ -26,7 +27,7 @@ lookback, lookahead = 96, 96
 num_bldg = 12
 
 # data
-model = TFMappfl.TimesFmAppfl(lookback = lookback, lookahead = lookahead)
+model = TFMmodel.TimesFmAppfl(lookback = lookback, lookahead = lookahead)
 model.load_state_dict(torch.load('/home/shourya01/timesfm/timesfm-1.0-200m-pytorch/torch_model.ckpt',map_location='cpu'))
 
 # get a dataset
@@ -40,8 +41,7 @@ dataset_train, dataset_val, dataset_test, mean, std = TFMdset.get_data_and_gener
         'lookahead' : lookahead,
         'normalize' : True,
         'dtype' : torch.float32,
-        'context_len' : 512,
-        'output_unpadded_inputs' : True
+        'context_len' : 512
     }
 )
 
@@ -57,6 +57,7 @@ if __name__ == "__main__":
 
     model = model.to(device)
     optim = torch.optim.Adam(model.parameters(),lr=1e-6)
+    sched = torch.optim.lr_scheduler.MultiplicativeLR(optim,lambda epoch: 0.9) # Scheduler: decay the learning rate by 90% on each epoch
     steps, epoch = 0, 0
     save_every = 100
     epochs = 20
@@ -69,7 +70,7 @@ if __name__ == "__main__":
             start = time.time()
             x, y = itm
             x, y = x.to(device), y.to(device)
-            out,= model(x))
+            out = model(x)
             loss = F.mse_loss(out,y,reduction='mean')
             optim.zero_grad()
             loss.backward()
@@ -85,13 +86,15 @@ if __name__ == "__main__":
                 losses_train.to_csv('train.csv')
             end = time.time()
             print(f"Step {steps+1} on epoch {epoch+1} took {(end-start):.3f}s. MSE loss: {mse_loss:.5f}, MAE loss: {mae_loss:.5f}. Expected time for this epoch: {int((end-start)*train_len)}s")
+        # step the learning rate scheduler
+        sched.step()
         # test
         model = model.to(device_2) # move to secondary cuda
         test_mse, test_mae = 0. , 0.
         for itm in dl_test:
             x, y = itm
             x, y = x.to(device), y.to(device)
-            out, _ = model(x)
+            out = model(x)
             test_mse += F.mse_loss(out,y,reduction='mean').item()
             test_mae += F.l1_loss(out,y,reduction='mean').item()
         if epoch == 0:
