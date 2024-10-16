@@ -15,13 +15,13 @@ class TimesFmAppfl(nn.Module):
         self.lookback, self.lookahead = lookback, lookahead
         self.context_len = context_len
 
-    def load_state_dict(self, state_dict):
+    def load_state_dict(self, state_dict, *args, **kwargs):
 
-        return self.timesfm.load_state_dict(state_dict)
+        return self.timesfm.load_state_dict(state_dict, *args, **kwargs)
 
-    def state_dict(self):
+    def state_dict(self, *args, **kwargs):
 
-        return self.timesfm.state_dict()
+        return self.timesfm.state_dict(*args, **kwargs)
     
     def pad_tensor(self, x):
 

@@ -7,12 +7,8 @@ import matplotlib.pyplot as plt
 import time
 from tqdm import tqdm
 
-import timesfm.timesfm_base as TFMbase
-import timesfm.timesfm_torch as TFMtorch
-import timesfm.data_loader as TFMDL
-import timesfm.time_features as TFMtime
-import timesfm.pytorch_patched_decoder as TFMmodel
-import timesfm.custom_data_set as TFMdset
+import timesfm.pytorch_patched_decoder_appfl as TFMappfl
+import timesfm.custom_data_set_appfl as TFMdset
 
 plt.rcParams['text.usetex'] = True
 plt.rcParams.update({'font.size': 14})
@@ -30,13 +26,11 @@ lookback, lookahead = 96, 96
 num_bldg = 12
 
 # data
-tcm = TFMbase.TimesFmHparams
-tcm.per_core_batch_size = batch_size
-tckpt = TFMbase.TimesFmCheckpoint(path='/home/sbose/timesfm/timesfm-1.0-200m-pytorch/torch_model.ckpt')
-base = TFMtorch.TimesFmTorch(tcm,tckpt)
+model = TFMappfl.TimesFmAppfl(lookback = lookback, lookahead = lookahead)
+model.load_state_dict(torch.load('/home/shourya01/timesfm/timesfm-1.0-200m-pytorch/torch_model.ckpt',map_location='cpu'))
 
 # get a dataset
-data = np.load('/home/sbose/out_there/FederatedPersonalizedLoadForecasting/NRELNYdataset.npz')['data']
+data = np.load('/home/shourya01/curated_comstock/data/IllinoisCommercial.npz')['data']
 dataset_train, dataset_val, dataset_test, mean, std = TFMdset.get_data_and_generate_train_val_test_sets(
     data_array = data,
     split_ratios = [0.8,0.1,0.1],
@@ -56,12 +50,12 @@ dl = DataLoader(dataset_train, batch_size = batch_size, shuffle=False)
 dl_test = DataLoader(dataset_test, batch_size = batch_size, shuffle=False)
 
 # move model to device
-base._model = base._model.to(device)
+model = model.to(device)
 
 # main
 if __name__ == "__main__":
 
-    model = base._model.to(device)
+    model = model.to(device)
     optim = torch.optim.Adam(model.parameters(),lr=1e-6)
     steps, epoch = 0, 0
     save_every = 100
@@ -73,14 +67,9 @@ if __name__ == "__main__":
         model = model.to(device) # move to primary cuda
         for itm in (t:=tqdm(dl)):
             start = time.time()
-            ts, paddings, freq, y, _ = itm
-            ts, paddings, freq, y = ts.to(device), paddings.to(device), freq.to(device), y.to(device)
-            out, _ = model.decode(
-                ts,
-                paddings,
-                freq,
-                horizon_len = lookahead
-            )
+            x, y = itm
+            x, y = x.to(device), y.to(device)
+            out,= model(x))
             loss = F.mse_loss(out,y,reduction='mean')
             optim.zero_grad()
             loss.backward()
@@ -100,14 +89,9 @@ if __name__ == "__main__":
         model = model.to(device_2) # move to secondary cuda
         test_mse, test_mae = 0. , 0.
         for itm in dl_test:
-            ts, paddings, freq, y, _ = itm
-            ts, paddings, freq, y = ts.to(device_2), paddings.to(device_2), freq.to(device_2), y.to(device_2)
-            out, _ = model.decode(
-                ts,
-                paddings,
-                freq,
-                horizon_len = lookahead
-            )
+            x, y = itm
+            x, y = x.to(device), y.to(device)
+            out, _ = model(x)
             test_mse += F.mse_loss(out,y,reduction='mean').item()
             test_mae += F.l1_loss(out,y,reduction='mean').item()
         if epoch == 0:

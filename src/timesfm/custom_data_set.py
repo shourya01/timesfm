@@ -16,8 +16,7 @@ class NRELComstock(Dataset):
         dtype: torch.dtype = torch.float32,
         mean: np.ndarray = None,
         std: np.ndarray = None,
-        context_len: int = 512,
-        output_unpadded_inputs: bool = False
+        context_len: int = 512
     ):
         
         if data_array.shape[0] < num_bldg:
@@ -48,7 +47,6 @@ class NRELComstock(Dataset):
         self.total_len = len_per_client * self.num_clients
         
         # save whether to normalize, and the data type
-        self.output_unpadded_inputs = output_unpadded_inputs
         self.normalize = normalize
         self.dtype = dtype
         
@@ -56,10 +54,6 @@ class NRELComstock(Dataset):
         if not self.normalize:
             self.mean = np.zeros_like(self.mean)
             self.std = np.ones_like(self.std)
-
-        # generate the padding indicators
-        self._generate_padding()
-        self._generate_freq_indicator()
         
     def _client_and_idx(self, idx):
         
@@ -73,12 +67,6 @@ class NRELComstock(Dataset):
         
         return self.total_len
 
-    def _generate_padding(self):
-
-        self.padding = np.zeros((self.context_len+self.lookahead,))
-        padded_len = max(0,self.context_len-self.lookback)
-        self.padding[:padded_len] = 1
-
     def _generate_freq_indicator(self):
 
         self.freq = np.zeros((1,))
@@ -91,29 +79,20 @@ class NRELComstock(Dataset):
         if self.normalize:
             x[-self.lookback:] = self.ndata[cidx,tidx:tidx+self.lookback][-self.context_len:]
             y = self.ndata[cidx,tidx+self.lookback:tidx+self.lookback+self.lookahead][-self.context_len:]
-            if self.output_unpadded_inputs:
-                x_unpadded = self.ndata[cidx,tidx:tidx+self.lookback]
         else:
             x[-self.lookback:] = self.ndata[cidx,tidx:tidx+self.lookback][-self.context_len:]
             y = self.data[cidx,tidx+self.lookback:tidx+self.lookback+self.lookahead]
-            if self.output_unpadded_inputs:
-                x_unpadded = self.ndata[cidx,tidx:tidx+self.lookback]
             
         # convert to pytorch format
-        x,y,padding,freq = torch.tensor(x,dtype=self.dtype), torch.tensor(y,dtype=self.dtype), torch.tensor(self.padding,dtype=self.dtype), torch.LongTensor(self.freq)
-        if self.output_unpadded_inputs:
-                x_unpadded = torch.tensor(x_unpadded, dtype=self.dtype)
+        x, y = torch.tensor(x,dtype=self.dtype), torch.tensor(y,dtype=self.dtype)
         
-        if self.output_unpadded_inputs:
-            return x,padding,freq,y,x_unpadded
-        else:
-            return x,padding,freq,y
+        return x,y
     
 
-def get_data_and_generate_train_val_test_sets(
+def get_data_and_generate_train_test_sets(
     data_array: np.ndarray, # data matrix of shape (num_bldg,num_time_points,num_features). NOTE that features 2 and 3 are categorical features to embed time indices
     split_ratios: Union[List,Tuple], # 3-element list containing the ratios of train-val-test
-    dataset_kwargs: Tuple # ONLY include num_bldg, lookback, lookahead, normalize, dtype, context_len, and output_unpadded_inputs keys. See NRELComstock definition above for details.
+    dataset_kwargs: Tuple # ONLY include num_bldg, lookback, lookahead, normalize, dtype, and context_len keys. See NRELComstock definition above for details.
 ):
     
     assert len(split_ratios) == 3, "The split list must contain three elements."
