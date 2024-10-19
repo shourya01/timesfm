@@ -5,32 +5,37 @@ import torch.nn.utils.parametrize as parametrize
 import copy
 import math
 
-class LoRAParametrization(nn.Module):
-    def __init__(self, lora_rank):
+class DoRAParametrization(nn.Module):
+    def __init__(self, dora_rank):
         super().__init__()
-        self.lora_rank = lora_rank
-        self.lora_A = None
-        self.lora_B = None
+        self.dora_rank = dora_rank
+        self.dora_A = None
+        self.dora_B = None
+        self.dora_m = None
 
-    def initialize_lora(self, weight_shape, device=None, dtype=None):
-        if self.lora_A is None or self.lora_B is None:
+    def initialize_dora(self, weight_shape, device=None, dtype=None):
+        if self.dora_A is None or self.dora_B is None or self.dora_m is None:
             in_features = weight_shape[1]
             out_features = weight_shape[0]
             device = device or torch.device('cpu')
             dtype = dtype or torch.float32
-            self.lora_A = nn.Parameter(torch.zeros(self.lora_rank, in_features, device=device, dtype=dtype))
-            self.lora_B = nn.Parameter(torch.zeros(out_features, self.lora_rank, device=device, dtype=dtype))
-            nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
-            nn.init.zeros_(self.lora_B)
+            self.dora_A = nn.Parameter(torch.zeros(self.dora_rank, in_features, device=device, dtype=dtype))
+            self.dora_B = nn.Parameter(torch.zeros(out_features, self.dora_rank, device=device, dtype=dtype))
+            self.dora_m = nn.Parameter(torch.zeros(1, out_features, device=device, dtype=dtype))
+            nn.init.kaiming_uniform_(self.dora_A, a=math.sqrt(5))
+            nn.init.zeros_(self.dora_B)
+            nn.init.ones_(self.dora_m)
 
     def forward(self, weight):
-        self.initialize_lora(weight.shape, weight.device, weight.dtype)
-        delta_W = torch.matmul(self.lora_B, self.lora_A)
+        self.initialize_dora(weight.shape, weight.device, weight.dtype)
+        delta_W1 = torch.matmul(self.dora_B, self.dora_A)
+        delta_W1 = delta_W1 / ( delta_W1.norm(dim=1, keepdim=True) + 1e-6 )
+        delta_W = delta_W1 * self.dora_m.t()
         return weight + delta_W
 
-def add_lora_adapters(model, lora_rank, submodule_name):
+def add_dora_adapters(model, dora_rank, submodule_name):
     """
-    Adds LoRA adapters to all 2D parameters in the specified submodule.
+    Adds DoRA adapters to all 2D parameters in the specified submodule.
     Freezes all parameters in the model to prevent them from being updated during training.
     """
     from torch.nn.utils import parametrize
@@ -70,10 +75,10 @@ def add_lora_adapters(model, lora_rank, submodule_name):
             param_name = name.split('.')[-1]
             if parametrize.is_parametrized(owning_module, param_name):
                 continue
-            # Apply LoRA parametrization
+            # Apply DoRA parametrization
             param.requires_grad = False  # Ensure the original parameter is frozen
             parametrize.register_parametrization(
-                owning_module, param_name, LoRAParametrization(lora_rank)
+                owning_module, param_name, DoRAParametrization(dora_rank)
             )
             modules_with_params.add(owning_module)
 
