@@ -30,7 +30,7 @@ lookback, lookahead = 96, 96
 num_bldg = 12
 
 # LoRA rank
-dora_rank = 1
+dora_rank = 16
 
 # data
 model = TFMmodel.TimesFmAppfl(lookback = lookback, lookahead = lookahead)

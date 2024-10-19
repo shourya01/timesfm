@@ -13,25 +13,26 @@ class DoRAParametrization(nn.Module):
         self.dora_B = None
         self.dora_m = None
 
-    def initialize_dora(self, weight_shape, device=None, dtype=None):
-        if self.dora_A is None or self.dora_B is None or self.dora_m is None:
+    def initialize_dora(self, weight):
+        if (self.dora_A is None) or (self.dora_B is None) or (self.dora_m is None):
+            weight_shape, device, dtype = weight.shape, weight.device, weight.dtype
             in_features = weight_shape[1]
             out_features = weight_shape[0]
             device = device or torch.device('cpu')
             dtype = dtype or torch.float32
             self.dora_A = nn.Parameter(torch.zeros(self.dora_rank, in_features, device=device, dtype=dtype))
             self.dora_B = nn.Parameter(torch.zeros(out_features, self.dora_rank, device=device, dtype=dtype))
-            self.dora_m = nn.Parameter(torch.zeros(1, out_features, device=device, dtype=dtype))
-            nn.init.kaiming_uniform_(self.dora_A, a=math.sqrt(5))
+            self.dora_m = nn.Parameter(weight.norm(dim=1, keepdim=True).t().detach().to(dtype).to(device))
+            nn.init.normal_(self.dora_A, mean=0., std=1.)
             nn.init.zeros_(self.dora_B)
-            nn.init.ones_(self.dora_m)
+            # nn.init.ones_(self.dora_m)
 
     def forward(self, weight):
-        self.initialize_dora(weight.shape, weight.device, weight.dtype)
-        delta_W1 = torch.matmul(self.dora_B, self.dora_A)
-        delta_W1 = delta_W1 / ( delta_W1.norm(dim=1, keepdim=True) + 1e-6 )
-        delta_W = delta_W1 * self.dora_m.t()
-        return weight + delta_W
+        self.initialize_dora(weight)
+        weight = weight + torch.matmul(self.dora_B, self.dora_A)
+        weight = weight / weight.norm(dim=1, keepdim=True)
+        weight = weight * self.dora_m.t()
+        return weight
 
 def add_dora_adapters(model, dora_rank, submodule_name):
     """

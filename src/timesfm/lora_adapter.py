@@ -20,7 +20,7 @@ class LoRAParametrization(nn.Module):
             dtype = dtype or torch.float32
             self.lora_A = nn.Parameter(torch.zeros(self.lora_rank, in_features, device=device, dtype=dtype))
             self.lora_B = nn.Parameter(torch.zeros(out_features, self.lora_rank, device=device, dtype=dtype))
-            nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
+            nn.init.normal_(self.lora_A, mean=0., std=1.)
             nn.init.zeros_(self.lora_B)
 
     def forward(self, weight):
